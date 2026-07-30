@@ -113,15 +113,20 @@ with col_chat:
                 output_text = ai_response.content
                 
                 # 4. Check if the model triggered an HR escalation
-                if "[TRIGGER_ESCALATION:" in output_text:
-                    try:
-                        issue_details = output_text.split("[TRIGGER_ESCALATION:")[1].split("]")[0]
-                        trigger_escalation(issue_details.strip())
-                        # Clean up the hidden tags so the employee doesn't see raw code syntax
-                        output_text = output_text.split("[TRIGGER_ESCALATION:")[0].strip()
-                        output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
-                    except Exception:
-                        trigger_escalation(user_input)
+                #  NEW WORKING LOGIC:
+                    if "[TRIGGER_ESCALATION:" in output_text:
+                        try:
+                            # Split properly and target the content inside brackets
+                            parts = output_text.split("[TRIGGER_ESCALATION:")
+                            issue_details = parts[1].split("]")[0]
+                            trigger_escalation(issue_details.strip())
+                            
+                            # Clean the system tag out of the chat output text
+                            output_text = parts[0].strip()
+                            output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
+                        except Exception:
+                            trigger_escalation(user_input)
+
                 
                 st.write(output_text)
                 
