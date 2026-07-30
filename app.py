@@ -22,7 +22,6 @@ if "escalations" not in st.session_state:
     st.session_state.escalations = []
 
 # SAFE API KEY LOADING: NO HARDCODING. 
-# GitHub will accept this instantly because your key is completely absent.
 deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
 
 if not deepseek_key:
@@ -55,7 +54,7 @@ def setup_knowledge_base():
 retriever = setup_knowledge_base()
 
 # =====================================================================
-# 3. UTILITY METHODS (Direct Logic Execution instead of Broken Imports)
+# 3. UTILITY METHODS
 # =====================================================================
 def run_rag_search(query: str) -> str:
     docs = retriever.invoke(query)
@@ -68,7 +67,6 @@ def trigger_escalation(issue: str):
 # =====================================================================
 # 4. SYSTEM PROMPT DESIGN
 # =====================================================================
-# We explicitly bind the tools dynamically via prompting to guarantee compatibility with DeepSeek
 system_prompt = (
     "You are an empathetic, professional Corporate Onboarding Assistant.\n"
     "Your primary goal is to train new employees on their duties.\n\n"
@@ -112,21 +110,19 @@ with col_chat:
                 ai_response = llm.invoke(messages)
                 output_text = ai_response.content
                 
-                # 4. Check if the model triggered an HR escalation
-                #  NEW WORKING LOGIC:
-                    if "[TRIGGER_ESCALATION:" in output_text:
-                        try:
-                            # Split properly and target the content inside brackets
-                            parts = output_text.split("[TRIGGER_ESCALATION:")
-                            issue_details = parts[1].split("]")[0]
-                            trigger_escalation(issue_details.strip())
-                            
-                            # Clean the system tag out of the chat output text
-                            output_text = parts[0].strip()
-                            output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
-                        except Exception:
-                            trigger_escalation(user_input)
-
+                # 4. FIXED INDENTATION & EXTRACTION LOGIC
+                if "[TRIGGER_ESCALATION:" in output_text:
+                    try:
+                        # Split properly and target the content inside brackets
+                        parts = output_text.split("[TRIGGER_ESCALATION:")
+                        issue_details = parts[1].split("]")[0]
+                        trigger_escalation(issue_details.strip())
+                        
+                        # Clean the system tag out of the chat output text
+                        output_text = parts[0].strip()
+                        output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
+                    except Exception:
+                        trigger_escalation(user_input)
                 
                 st.write(output_text)
                 
