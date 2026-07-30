@@ -8,25 +8,19 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
 
-# =====================================================================
-# 1. INITIALIZATION & CONFIGURATION
-# =====================================================================
-st.set_page_config(page_title="Company AI Onboarding Hub", layout="wide")
-st.title("🤝 Corporate Onboarding & Role Support Assistant")
-st.caption("Learn your duties, explore company policies, or resolve role misalignments.")
+# 1. Paste your real DeepSeek key here or use Streamlit secrets
+if "DEEPSEEK_API_KEY" not in os.environ:
+    os.environ["DEEPSEEK_API_KEY"] = "sk-19c9844c29984c8481c97e0c85c2427d"
 
-# Secure your API key (In production, use Streamlit Secrets or environment variables)
-if "OPENAI_API_KEY" not in os.environ:
-    os.environ["OPENAI_API_KEY"] = "your-openai-api-key-here"
+# 2. Configure ChatOpenAI to target the DeepSeek endpoint and model
+llm = ChatOpenAI(
+    model="deepseek-chat", # Uses DeepSeek-V3 or DeepSeek-R1 depending on your needs
+    openai_api_key=os.environ["DEEPSEEK_API_KEY"],
+    openai_api_base="https://deepseek.com",
+    temperature=0.2
+)
 
-# Initialize Session State for Chat History & Escalation Logs
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "escalations" not in st.session_state:
-    st.session_state.escalations = []
-
-# Initialize LLM
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.2)
+# Note: The rest of your agent and Streamlit code remains exactly the same!
 
 # =====================================================================
 # 2. TRAINING KNOWLEDGE BASE (RAG) Setup
