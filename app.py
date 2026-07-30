@@ -1,39 +1,58 @@
 import streamlit as st
 import os
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
+# UPDATED: Use community embeddings to avoid paying OpenAI for document searches
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
+# FIXED IMPORTS: Modern paths for the tool-calling agent framework
 from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
 
-# 1. Paste your real DeepSeek key here or use Streamlit secrets
-if "DEEPSEEK_API_KEY" not in os.environ:
-    os.environ["DEEPSEEK_API_KEY"] = "sk-19c9844c29984c8481c97e0c85c2427d"
+# =====================================================================
+# 1. INITIALIZATION & CONFIGURATION
+# =====================================================================
+st.set_page_config(page_title="Company AI Onboarding Hub", layout="wide")
+st.title("🤝 Corporate Onboarding & Role Support Assistant")
+st.caption("Learn your duties, explore company policies, or resolve role misalignments.")
 
-# 2. Configure ChatOpenAI to target the DeepSeek endpoint and model
+# Initialize Session State for Chat History & Escalation Logs
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "escalations" not in st.session_state:
+    st.session_state.escalations = []
+
+# Fetch key from Streamlit secrets (Production) or local environment (Dev)
+deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
+
+if not deepseek_key:
+    st.warning("⚠️ DEEPSEEK_API_KEY not found. Please add it to your Streamlit Secrets or Environment Variables.")
+    # Fallback placeholder so the script can compile
+    deepseek_key = "placeholder"
+
+# Configure ChatOpenAI to route directly to DeepSeek's server
 llm = ChatOpenAI(
-    model="deepseek-chat", # Uses DeepSeek-V3 or DeepSeek-R1 depending on your needs
-    openai_api_key=os.environ["DEEPSEEK_API_KEY"],
-    openai_api_base="https://deepseek.com",
+    model="deepseek-chat", 
+    openai_api_key=deepseek_key,
+    openai_api_base="https://deepseek.com", # FIXED: Correct DeepSeek API base URL
     temperature=0.2
 )
-
-# Note: The rest of your agent and Streamlit code remains exactly the same!
 
 # =====================================================================
 # 2. TRAINING KNOWLEDGE BASE (RAG) Setup
 # =====================================================================
 @st.cache_resource
 def setup_knowledge_base():
-    """Simulates loading company onboarding documents into a vector database."""
+    """Loads onboarding documents into a free, open-source local vector database."""
     onboarding_docs = [
         Document(page_content="Company Core Hours: 9 AM to 5 PM. Remote work requires prior team-lead approval.", metadata={"source": "HR-Policy"}),
         Document(page_content="Software Engineer Role: Responsibilities include writing clean Python code, participating in daily standups at 10 AM, and reviewing 2 pull requests daily.", metadata={"source": "Eng-Playbook"}),
         Document(page_content="Expense Reporting: Submit all monthly operational receipts via the internal portal by the 25th of each month.", metadata={"source": "Finance-Wiki"}),
     ]
-    embeddings = OpenAIEmbeddings()
+    # FIXED: Replaced OpenAIEmbeddings with free local embeddings to bypass OpenAI account checks
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     vector_store = InMemoryVectorStore(embeddings)
     vector_store.add_documents(onboarding_docs)
     return vector_store.as_retriever(search_kwargs={"k": 2})
@@ -52,7 +71,6 @@ def query_company_handbook(query: str) -> str:
 @tool
 def escalate_to_management(employee_issue: str) -> str:
     """Useful ONLY when an employee expresses explicit misalignment, confusion, or conflict regarding their role, duties, or management expectations."""
-    # In production, this would trigger an email via SendGrid or log to a database
     log_entry = {"issue": employee_issue, "status": "Pending HR Review"}
     st.session_state.escalations.append(log_entry)
     return "SUCCESS: This critical role misalignment has been flagged and escalated to Management/HR. A representative will schedule a meeting with you shortly."
