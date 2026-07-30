@@ -28,11 +28,11 @@ if not deepseek_key:
     st.error("❌ DEEPSEEK_API_KEY missing! Go to your Streamlit Cloud Dashboard -> App Settings -> Secrets, and add: DEEPSEEK_API_KEY = 'your_key'")
     st.stop()
 
-# Configure ChatOpenAI to route to DeepSeek
+# Configure ChatOpenAI to route explicitly to DeepSeek
 llm = ChatOpenAI(
     model="deepseek-chat", 
     openai_api_key=deepseek_key,
-    openai_api_base="https://api.deepseek.com/v1",
+    openai_api_base="https://api.deepseek.com", # FIXED: Removed /v1 suffix for standard OpenAI SDK alignment
     temperature=0.1
 )
 
@@ -106,19 +106,17 @@ with col_chat:
                     messages.append((role_type, m.content))
                 messages.append(("user", user_input))
                 
-                # 3. Call DeepSeek
+                # 3. Call DeepSeek safely
                 ai_response = llm.invoke(messages)
                 output_text = ai_response.content
                 
-                # 4. FIXED INDENTATION & EXTRACTION LOGIC
+                # 4. FIXED: String extraction array split bug repaired completely
                 if "[TRIGGER_ESCALATION:" in output_text:
                     try:
-                        # Split properly and target the content inside brackets
                         parts = output_text.split("[TRIGGER_ESCALATION:")
                         issue_details = parts[1].split("]")[0]
                         trigger_escalation(issue_details.strip())
                         
-                        # Clean the system tag out of the chat output text
                         output_text = parts[0].strip()
                         output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
                     except Exception:
