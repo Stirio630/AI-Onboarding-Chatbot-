@@ -1,11 +1,11 @@
 import streamlit as st
 import os
-from langchain_openai import ChatOpenAI
+# FIXED: Using the official LangChain DeepSeek integration model package
+from langchain_deepseek import ChatDeepSeek
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.tools import tool
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage, HumanMessage
 
 # =====================================================================
@@ -21,18 +21,17 @@ if "chat_history" not in st.session_state:
 if "escalations" not in st.session_state:
     st.session_state.escalations = []
 
-# SAFE API KEY LOADING: NO HARDCODING. 
+# SAFE API KEY LOADING
 deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
 
 if not deepseek_key:
     st.error("❌ DEEPSEEK_API_KEY missing! Go to your Streamlit Cloud Dashboard -> App Settings -> Secrets, and add: DEEPSEEK_API_KEY = 'your_key'")
     st.stop()
 
-# Configure ChatOpenAI to route explicitly to DeepSeek
-llm = ChatOpenAI(
+# FIXED: Native initialization handles deepseek endpoints without throwing APIStatusErrors
+llm = ChatDeepSeek(
     model="deepseek-chat", 
-    openai_api_key=deepseek_key,
-    openai_api_base="https://api.deepseek.com", # FIXED: Removed /v1 suffix for standard OpenAI SDK alignment
+    api_key=deepseek_key,
     temperature=0.1
 )
 
@@ -110,7 +109,7 @@ with col_chat:
                 ai_response = llm.invoke(messages)
                 output_text = ai_response.content
                 
-                # 4. FIXED: String extraction array split bug repaired completely
+                # 4. Process string tags for escalations
                 if "[TRIGGER_ESCALATION:" in output_text:
                     try:
                         parts = output_text.split("[TRIGGER_ESCALATION:")
