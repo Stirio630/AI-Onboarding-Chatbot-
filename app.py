@@ -1,12 +1,9 @@
 import streamlit as st
 import os
 from langchain_openai import ChatOpenAI
-# Community embeddings allow text matching without an OpenAI account
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.vectorstores import InMemoryVectorStore
 from langchain_core.documents import Document
-# Modern paths for the tool-calling agent framework
-from langchain.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import tool
 from langchain_core.messages import AIMessage, HumanMessage
@@ -18,25 +15,26 @@ st.set_page_config(page_title="Company AI Onboarding Hub", layout="wide")
 st.title("🤝 Corporate Onboarding & Role Support Assistant")
 st.caption("Learn your duties, explore company policies, or resolve role misalignments.")
 
-# Initialize Session State for Chat History & Escalation Logs
+# Initialize Session State
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "escalations" not in st.session_state:
     st.session_state.escalations = []
 
-# SECURE API KEY DISCOVERY: Tries Streamlit Secrets first, then falls back to local environment
+# SAFE API KEY LOADING: NO HARDCODING. 
+# GitHub will accept this instantly because your key is completely absent.
 deepseek_key = st.secrets.get("DEEPSEEK_API_KEY") or os.environ.get("DEEPSEEK_API_KEY")
 
-if not deepseek_key or deepseek_key == "MY KEYS":
-    st.warning("⚠️ DEEPSEEK_API_KEY not detected. Please insert your real key into Streamlit Secrets.")
-    deepseek_key = "placeholder_key"
+if not deepseek_key:
+    st.error("❌ DEEPSEEK_API_KEY missing! Go to your Streamlit Cloud Dashboard -> App Settings -> Secrets, and add: DEEPSEEK_API_KEY = 'your_key'")
+    st.stop()
 
-# Configure ChatOpenAI to route explicitly to DeepSeek's routing framework
+# Configure ChatOpenAI to route to DeepSeek
 llm = ChatOpenAI(
     model="deepseek-chat", 
     openai_api_key=deepseek_key,
-    openai_api_base="https://api.deepseek.com/v1", # FIXED: Required exact operational base URL
-    temperature=0.2
+    openai_api_base="https://api.deepseek.com/v1",
+    temperature=0.1
 )
 
 # =====================================================================
@@ -44,13 +42,11 @@ llm = ChatOpenAI(
 # =====================================================================
 @st.cache_resource
 def setup_knowledge_base():
-    """Loads onboarding documents into a free, local vector database."""
     onboarding_docs = [
         Document(page_content="Company Core Hours: 9 AM to 5 PM. Remote work requires prior team-lead approval.", metadata={"source": "HR-Policy"}),
         Document(page_content="Software Engineer Role: Responsibilities include writing clean Python code, participating in daily standups at 10 AM, and reviewing 2 pull requests daily.", metadata={"source": "Eng-Playbook"}),
         Document(page_content="Expense Reporting: Submit all monthly operational receipts via the internal portal by the 25th of each month.", metadata={"source": "Finance-Wiki"}),
     ]
-    # Local open-source model running calculations directly inside the Streamlit instance
     embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
     vector_store = InMemoryVectorStore(embeddings)
     vector_store.add_documents(onboarding_docs)
@@ -59,42 +55,29 @@ def setup_knowledge_base():
 retriever = setup_knowledge_base()
 
 # =====================================================================
-# 3. CUSTOM LANGCHAIN TOOLS (RAG & Escalation)
+# 3. UTILITY METHODS (Direct Logic Execution instead of Broken Imports)
 # =====================================================================
-@tool
-def query_company_handbook(query: str) -> str:
-    """Useful when you need to answer questions about company rules, policies, schedules, roles, and duties."""
+def run_rag_search(query: str) -> str:
     docs = retriever.invoke(query)
     return "\n\n".join([f"Source ({d.metadata['source']}): {d.page_content}" for d in docs])
 
-@tool
-def escalate_to_management(employee_issue: str) -> str:
-    """Useful ONLY when an employee expresses explicit misalignment, confusion, or conflict regarding their role, duties, or management expectations."""
-    log_entry = {"issue": employee_issue, "status": "Pending HR Review"}
+def trigger_escalation(issue: str):
+    log_entry = {"issue": issue, "status": "Pending HR Review"}
     st.session_state.escalations.append(log_entry)
-    return "SUCCESS: This critical role misalignment has been flagged and escalated to Management/HR. A representative will schedule a meeting with you shortly."
-
-tools = [query_company_handbook, escalate_to_management]
 
 # =====================================================================
-# 4. AGENT ASSEMBLY
+# 4. SYSTEM PROMPT DESIGN
 # =====================================================================
-prompt = ChatPromptTemplate.from_messages([
-    ("system", (
-        "You are an empathetic, professional Corporate Onboarding Assistant.\n"
-        "Your primary goal is to train new employees on their duties using the 'query_company_handbook' tool.\n"
-        "CRITICAL RULE: If the employee states their assigned tasks do not match their contract, "
-        "expresses conflict with management expectations, or shows deep frustration about their role responsibilities, "
-        "you MUST immediately use the 'escalate_to_management' tool to protect their onboarding experience. "
-        "Be supportive and clear about the escalation process."
-    )),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{input}"),
-    MessagesPlaceholder(variable_name="agent_scratchpad"),
-])
-
-agent = create_tool_calling_agent(llm, tools, prompt)
-agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+# We explicitly bind the tools dynamically via prompting to guarantee compatibility with DeepSeek
+system_prompt = (
+    "You are an empathetic, professional Corporate Onboarding Assistant.\n"
+    "Your primary goal is to train new employees on their duties.\n\n"
+    "You have access to the company handbook which contains information on HR-Policy, Eng-Playbook, and Finance-Wiki.\n"
+    "CRITICAL RULE: If the employee states their tasks do not match their contract, expresses conflict with management "
+    "expectations, or shows frustration about role responsibilities, you MUST tell them you are escalating this to HR "
+    "and append the special trigger text '[TRIGGER_ESCALATION: <describe the user issue here>]' at the very end of your response.\n"
+    "Always maintain a supportive, clear tone."
+)
 
 # =====================================================================
 # 5. STREAMLIT GUI LAYOUT
@@ -114,12 +97,32 @@ with col_chat:
             st.write(user_input)
             
         with st.chat_message("assistant"):
-            with st.spinner("Processing request..."):
-                response = agent_executor.invoke({
-                    "input": user_input,
-                    "chat_history": st.session_state.chat_history
-                })
-                output_text = response["output"]
+            with st.spinner("Thinking..."):
+                # 1. Look up relevant documents first
+                context_docs = run_rag_search(user_input)
+                
+                # 2. Build full conversational prompt context
+                messages = [("system", system_prompt), ("system", f"Relevant Company Info:\n{context_docs}")]
+                for m in st.session_state.chat_history[-4:]:  # keep last 4 context messages
+                    role_type = "assistant" if isinstance(m, AIMessage) else "user"
+                    messages.append((role_type, m.content))
+                messages.append(("user", user_input))
+                
+                # 3. Call DeepSeek
+                ai_response = llm.invoke(messages)
+                output_text = ai_response.content
+                
+                # 4. Check if the model triggered an HR escalation
+                if "[TRIGGER_ESCALATION:" in output_text:
+                    try:
+                        issue_details = output_text.split("[TRIGGER_ESCALATION:")[1].split("]")[0]
+                        trigger_escalation(issue_details.strip())
+                        # Clean up the hidden tags so the employee doesn't see raw code syntax
+                        output_text = output_text.split("[TRIGGER_ESCALATION:")[0].strip()
+                        output_text += "\n\n⚠️ *System Notification: This issue has been logged into the Management Panel.*"
+                    except Exception:
+                        trigger_escalation(user_input)
+                
                 st.write(output_text)
                 
         st.session_state.chat_history.append(HumanMessage(content=user_input))
@@ -128,7 +131,7 @@ with col_chat:
 
 with col_admin:
     st.subheader("🛡️ Management Control Panel")
-    st.info("This section simulates what HR/Management sees when a ticket is created.")
+    st.info("HR tracking panel view.")
     
     if not st.session_state.escalations:
         st.success("✅ No role misalignments reported yet.")
